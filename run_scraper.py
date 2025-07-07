@@ -18,11 +18,13 @@ async def get_product_links(page):
 async def scrape_product(page, product_url, writer):
     print(f"→ scraping variants on {product_url}")
     await page.goto(product_url)
-    # your existing variation logic lives here:
-    await page.wait_for_selector(VARIATION_FORM)
-    variants = await page.locator(VARIATION_FORM).element_handles()
-    if not variants:
-        print("   ⚠️ no variants found, skipping")
+ # new variation logic: count first, then wait only if present
+    variant_count = await page.locator(VARIATION_FORM).count()
+    if variant_count:
+        # only wait up to the global timeout for the first form to be visible
+        await page.locator(VARIATION_FORM).first.wait_for(state="visible")
+    else:
+        print("⚠️ no variants found (or JS failed) on this page – stopping.")
         return
 
     for form in variants:
