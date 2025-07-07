@@ -11,6 +11,7 @@ VARIATION_FORM = "form.variations_form"
 
 async def get_product_links(page):
     # wait for at least one product link to appear
+    await page.wait_for_timeout(3000)
     await page.wait_for_selector(PRODUCT_LINK)
     # pull all hrefs
     return await page.locator(PRODUCT_LINK).evaluate_all(
