@@ -1,0 +1,5 @@
+python-dotenv
+playwright
+pandas
+requests
+beautifulsoup4
