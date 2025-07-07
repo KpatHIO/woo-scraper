@@ -1,25 +1,22 @@
 name: Run Scraper
-
 on:
   workflow_dispatch:
     inputs:
       base_url:
-        description: 'The first page you want to scrape'
-        required:    true
-        default:     'https://pricewiseinsulation.com.au/shop/material/glasswool-insulation/'
+        description: 'The product or category page URL to scrape'
+        required: true
       rate_limit:
-        description: 'Requests per second'
-        required:    true
-        default:     '1.0'
+        description: 'Requests per second (e.g. 1.0)'
+        required: false
+        default: '1.0'
 
 jobs:
   scrape:
     runs-on: ubuntu-latest
-
-    # ← use github.event.inputs here, not vars
     env:
-      BASE_URL:   ${{ github.event.inputs.base_url }}
+      BASE_URL: ${{ github.event.inputs.base_url }}
       RATE_LIMIT: ${{ github.event.inputs.rate_limit }}
+
 
     steps:
       - name: Check out code
