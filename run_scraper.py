@@ -3,73 +3,78 @@ import csv
 import asyncio
 from playwright.async_api import async_playwright
 
-CATEGORY_ITEM    = "ul.products li.product"
-CATEGORY_LINK    = f"{CATEGORY_ITEM} a"
-VARIATION_FORM   = "form.variations_form"
+# ——— CONFIG ———
+# On your category page, each product has a "Buy Now" link that points to the product URL
+PRODUCT_LINK_SELECTOR   = 'a:has-text("Buy Now")'
+# On your product pages, WooCommerce renders each variation in a <form class="variations_form …">
+VARIATION_FORM_SELECTOR = "form.variations_form"
+
 
 async def get_product_links(page):
-    # wait for the category grid to appear
-    await page.wait_for_selector(CATEGORY_ITEM, timeout=20_000)
-    # pull all hrefs
-    return await page.locator(CATEGORY_LINK).evaluate_all(
-        "els => els.map(el => el.href)"
+    # wait for the Buy Now buttons to show up
+    await page.wait_for_selector(PRODUCT_LINK_SELECTOR)
+    # grab every unique href
+    links = await page.locator(PRODUCT_LINK_SELECTOR).evaluate_all(
+        "els => Array.from(new Set(els.map(el => el.href)))"
     )
+    print(f"→ found {len(links)} product links")
+    return links
 
-async def scrape_product(page, product_url, writer):
-    print(f"→ scraping variants on {product_url}")
-    # navigate, but don’t block forever waiting for every network call
-    try:
-        await page.goto(product_url, wait_until="load", timeout=60_000)
-    except Exception as e:
-        print(f"⚠️ navigation warning: {e}")
 
-    # count how many variation‐forms appear
-    form_locator = page.locator(VARIATION_FORM)
-    count = await form_locator.count()
-    if count == 0:
+async def scrape_product(page, url, writer):
+    print(f"→ scraping variants on {url}")
+    # default waitUntil="load"
+    await page.goto(url)
+
+    # count how many variation forms are on the page
+    count = await page.locator(VARIATION_FORM_SELECTOR).count()
+    if not count:
         print("⚠️ no variants found (or JS failed) on this page – skipping.")
         return
 
-    # wait for at least the first one to become visible
-    await form_locator.first.wait_for(state="visible", timeout=20_000)
+    # wait for the first one to become visible
+    await page.locator(VARIATION_FORM_SELECTOR).first.wait_for(state="visible")
+    # pull down all the form handles
+    variants = await page.locator(VARIATION_FORM_SELECTOR).element_handles()
 
-    # grab all the variation‐form handles
-    variants = await form_locator.element_handles()
     for form in variants:
-        sku_el   = await form.get_attribute("data-product_sku")
-        price_el = await form.locator(".woocommerce-variation-price .amount").inner_text()
-        writer.writerow({
-            "sku":   sku_el   or "",
-            "price": price_el or "",
-            "url":   product_url
-        })
+        sku   = await form.get_attribute("data-product_sku")
+        price = await form.locator(".woocommerce-variation-price .amount").inner_text()
+        writer.writerow({"sku": sku, "price": price, "url": url})
+
 
 async def main():
-    base_url = os.getenv("BASE_URL")
-    rate     = float(os.getenv("RATE_LIMIT", "1.0"))
+    base_url = os.environ.get("BASE_URL")
+    if not base_url:
+        raise RuntimeError("❌  BASE_URL env var is required")
 
-    # open CSV once for all products
+    rate = float(os.environ.get("RATE_LIMIT", 1.0))
+
+    # open CSV once, write header
     with open("products.csv", "w", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=["sku","price","url"])
+        writer = csv.DictWriter(f, fieldnames=["sku", "price", "url"])
         writer.writeheader()
 
         async with async_playwright() as p:
             browser = await p.chromium.launch()
             page    = await browser.new_page()
 
-            # CATEGORY vs SINGLE‐PRODUCT logic
-            await page.goto(base_url, wait_until="load", timeout=60_000)
-            if await page.locator(CATEGORY_ITEM).count() > 0:
-                prod_urls = await get_product_links(page)
-            else:
+            print(f"Starting scrape of {base_url}")
+            await page.goto(base_url)
+
+            # 1️⃣ grab all product-page links
+            prod_urls = await get_product_links(page)
+            if not prod_urls:
+                # fallback: maybe BASE_URL is itself a product page
                 prod_urls = [base_url]
 
-            # scrape each URL
+            # 2️⃣ visit each product and scrape its variants
             for url in prod_urls:
                 await scrape_product(page, url, writer)
                 await asyncio.sleep(1.0 / rate)
 
             await browser.close()
+
 
 if __name__ == "__main__":
     asyncio.run(main())
