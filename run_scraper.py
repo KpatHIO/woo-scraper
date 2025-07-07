@@ -20,8 +20,8 @@ async def get_product_links(page):
 async def scrape_product(page, product_url, writer):
     """Visit one product page, pull out every variation form, extract sku+price."""
     print(f"→ scraping variants on {product_url}")
-    # give the JS time to finish loading all variation HTML
-    await page.goto(product_url, wait_until="networkidle")
+# navigate, but don't block forever waiting for "networkidle"
+await page.goto(product_url, wait_until="load", timeout=60_000)
     # count how many variation forms actually appeared
     variant_count = await page.locator(VARIATION_FORM).count()
     if variant_count == 0:
