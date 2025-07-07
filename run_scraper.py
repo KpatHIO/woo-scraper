@@ -3,14 +3,17 @@ import csv
 import asyncio
 from playwright.async_api import async_playwright
 
-# ─── your CSS selectors ────────────────────────────────────────────────────────
-CATEGORY_ITEM    = "ul.products li.product"
-CATEGORY_LINK    = f"{CATEGORY_ITEM} a"
-VARIATION_FORM   = "form.variations_form"
+# ─── SITE-SPECIFIC SELECTORS ────────────────────────────────────────────
+# product links are in <h3><a href="…/product/…">…
+PRODUCT_LINK   = 'h3 a[href*="/product/"]'
+# on each product page, the variation form still has this class:
+VARIATION_FORM = "form.variations_form"
 
 async def get_product_links(page):
-    await page.wait_for_selector(CATEGORY_ITEM)
-    return await page.locator(CATEGORY_LINK).evaluate_all(
+    # wait for at least one product link to appear
+    await page.wait_for_selector(PRODUCT_LINK)
+    # pull all hrefs
+    return await page.locator(PRODUCT_LINK).evaluate_all(
         "els => els.map(el => el.href)"
     )
 
@@ -18,26 +21,26 @@ async def scrape_product(page, product_url, writer):
     print(f"→ scraping variants on {product_url}")
     await page.goto(product_url)
 
-    # 1) count how many variation forms there are
-    variant_locator = page.locator(VARIATION_FORM)
-    count = await variant_locator.count()
+    # count how many variation forms exist
+    count = await page.locator(VARIATION_FORM).count()
     if count == 0:
-        print("⚠️ no variants found – skipping")
+        print("⚠️ no variants found (or JS failed) on this page – skipping.")
         return
 
-    # 2) wait until the first one is actually visible
-    await variant_locator.first.wait_for(state="visible")
+    # wait for the first one to become visible
+    await page.locator(VARIATION_FORM).first.wait_for(state="visible")
 
-    # 3) loop over them by index so that 'form' is itself a Locator
-    for i in range(count):
-        form = variant_locator.nth(i)
+    # grab each form element handle
+    forms = await page.locator(VARIATION_FORM).element_handles()
+    for form in forms:
+        # adjust these selectors to match your CSV schema:
         sku   = await form.get_attribute("data-product_sku")
-        price = await form.locator(".woocommerce-variation-price .amount") \
-                        .inner_text()
+        price = await form.query_selector(".woocommerce-variation-price .amount")
+        price_text = await price.inner_text() if price else ""
         writer.writerow({
-            "sku":   sku,
-            "price": price,
-            "url":   product_url,
+            "sku": sku or "",
+            "price": price_text,
+            "url": product_url
         })
 
 async def main():
@@ -46,22 +49,17 @@ async def main():
 
     # open CSV once for all products
     with open("products.csv", "w", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=["sku", "price", "url"])
+        writer = csv.DictWriter(f, fieldnames=["sku","price","url"])
         writer.writeheader()
 
         async with async_playwright() as p:
             browser = await p.chromium.launch()
             page    = await browser.new_page()
 
-            #───────────────────────────────────────────────────────────
             # 1️⃣ Category pass: grab every product link
             await page.goto(base_url)
-            if await page.locator(CATEGORY_ITEM).count() > 0:
-                prod_urls = await get_product_links(page)
-            else:
-                prod_urls = [base_url]
+            prod_urls = await get_product_links(page)
 
-            #───────────────────────────────────────────────────────────
             # 2️⃣ Product pass: visit each product and scrape its variants
             for url in prod_urls:
                 await scrape_product(page, url, writer)
