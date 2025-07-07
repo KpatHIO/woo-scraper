@@ -1,15 +1,11 @@
-import os
 import csv
-from dotenv import load_dotenv
+from scraper.config import get_settings
 from scraper.crawler import get_product_urls
 from scraper.extractor import extract_variants
 
 def main():
-    # Load .env (for local runs) or use ACTIONS secrets
-    load_dotenv()
-    base_url = os.getenv("BASE_URL")
-    rate_limit = float(os.getenv("RATE_LIMIT", "1"))
-
+    # Load BASE_URL and RATE_LIMIT from env (or GitHub secrets)
+    base_url, rate_limit = get_settings()
     print(f"Starting scrape of {base_url} at {rate_limit} req/s")
 
     # 1. Crawl listing pages for all product URLs
