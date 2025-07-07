@@ -29,7 +29,7 @@ async def main():
             writer = csv.DictWriter(f, fieldnames=["location", "r_value", "width", "price", "url"])
             writer.writeheader()
 
-            for loc in locs:
+for loc in locs:
     # ← Wrap this select in try/except
     try:
         await page.select_option(
