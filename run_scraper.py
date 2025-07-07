@@ -21,26 +21,27 @@ async def get_product_links(page):
     return links
 
 
-async def scrape_product(page, url, writer):
-    print(f"→ scraping variants on {url}")
-    # default waitUntil="load"
-    await page.goto(url)
+async def scrape_product(page, product_url, writer):
+    print(f"→ scraping variants on {product_url}")
+    await page.goto(product_url)
 
-    # count how many variation forms are on the page
-    count = await page.locator(VARIATION_FORM_SELECTOR).count()
-    if not count:
-        print("⚠️ no variants found (or JS failed) on this page – skipping.")
+    # count variants forms
+    variant_locator = page.locator(VARIATION_FORM)
+    count = await variant_locator.count()
+    if count == 0:
+        print("⚠️ no variants found – skipping")
         return
 
-    # wait for the first one to become visible
-    await page.locator(VARIATION_FORM_SELECTOR).first.wait_for(state="visible")
-    # pull down all the form handles
-    variants = await page.locator(VARIATION_FORM_SELECTOR).element_handles()
+    # wait for at least one to be visible
+    await variant_locator.first.wait_for(state="visible")
 
-    for form in variants:
+    # now loop
+    for i in range(count):
+        form = variant_locator.nth(i)
         sku   = await form.get_attribute("data-product_sku")
-        price = await form.locator(".woocommerce-variation-price .amount").inner_text()
-        writer.writerow({"sku": sku, "price": price, "url": url})
+        price = await form.locator(".woocommerce-variation-price .amount") \
+                        .inner_text()
+        writer.writerow({ "sku": sku, "price": price, "url": product_url })
 
 
 async def main():
