@@ -14,7 +14,7 @@ async def get_product_links(page):
 
 async def scrape_product(page, product_url, writer):
     print(f"→ scraping variants on {product_url}")
-    await page.goto(product_url, wait_until="networkidle")
+    await page.goto(product_url, wait_until="domcontentloaded")
     # Check if there are any variation forms on the page
     variant_count = await page.locator(VARIATION_FORM).count()
     if variant_count:
