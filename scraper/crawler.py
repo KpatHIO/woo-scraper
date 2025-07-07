@@ -1,39 +1,48 @@
 import time
-import requests
-from bs4 import BeautifulSoup
+from urllib.parse import urljoin
+from playwright.sync_api import sync_playwright
 
 def get_product_urls(base_url: str, rate_limit: float) -> list[str]:
     """
-    Crawl WooCommerce category pages and collect all product page URLs.
-    Stops when a page returns no products.
+    Uses Playwright to load each paginated category page (product-page=1,2,…),
+    waits for the product grid to render, then extracts all hrefs containing '/product/'.
+    Stops when no new URLs appear.
     """
-    headers = {"User-Agent": "woo-scraper-bot/1.0"}
     product_urls: list[str] = []
-    page = 1
+    page_num = 1
 
-    while True:
-        list_url = f"{base_url}?product-page={page}"
-        print(f"Crawling {list_url} …")
-        resp = requests.get(list_url, headers=headers)
-        if resp.status_code != 200:
-            print(f" → Status {resp.status_code}; stopping.")
-            break
+    with sync_playwright() as p:
+        browser = p.chromium.launch()
+        page = browser.new_page()
 
-        soup = BeautifulSoup(resp.text, "html.parser")
-        # Adjust this selector if your theme differs:
-        items = soup.select("ul.products li.product a.woocommerce-LoopProduct-link")
+        while True:
+            url = f"{base_url}?product-page={page_num}"
+            print(f"▶ Loading {url}")
+            page.goto(url)
+            # wait up to 5s for at least one product link to appear
+            try:
+                page.wait_for_selector("a[href*='/product/']", timeout=5000)
+            except:
+                print("⚠️ No products found on this page; stopping pagination.")
+                break
 
-        if not items:
-            print(" → No more products found; pagination complete.")
-            break
+            anchors = page.query_selector_all("a[href*='/product/']")
+            new_found = 0
+            for a in anchors:
+                href = a.get_attribute("href")
+                # make absolute
+                href = urljoin(base_url, href)
+                if href not in product_urls:
+                    product_urls.append(href)
+                    new_found += 1
 
-        for a in items:
-            href = a.get("href")
-            if href and href not in product_urls:
-                product_urls.append(href)
+            print(f"  • Page {page_num}: found {new_found} new products (total {len(product_urls)})")
+            if new_found == 0:
+                break
 
-        print(f" → Page {page}: found {len(items)} products (total {len(product_urls)})")
-        time.sleep(1 / rate_limit)
-        page += 1
+            page_num += 1
+            time.sleep(1 / rate_limit)
+
+        browser.close()
 
     return product_urls
