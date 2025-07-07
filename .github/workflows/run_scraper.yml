@@ -12,8 +12,8 @@ jobs:
   scrape:
     runs-on: ubuntu-latest
     env:
-      BASE_URL: ${{ vars.BASE_URL }}
-      RATE_LIMIT: ${{ vars.RATE_LIMIT }}
+      BASE_URL:    ${{ github.event.inputs.base_url }}
+      RATE_LIMIT:  ${{ github.event.inputs.rate_limit }}
     steps:
       - name: Check out code
         uses: actions/checkout@v3
